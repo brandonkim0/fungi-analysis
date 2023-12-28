@@ -1,0 +1,488 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+Setting up the fire data
+```{r}
+fire <- read.csv("mapdataall.csv")
+
+fire <- fire %>% 
+  select(incident_name, incident_date_created, incident_county, incident_acres_burned) %>% 
+  filter(incident_county != "") %>% 
+  mutate(incident_date_created=ymd_hms(incident_date_created)) %>% 
+  mutate(incident_date_created=format(incident_date_created, "%Y-%m-%d"))
+
+caCounties <- read.csv("us-county-boundaries.csv")
+caCounties <- caCounties %>% 
+  select(NAMELSAD, INTPTLAT, INTPTLON) %>% 
+  mutate(NAMELSAD=sub(" County", "", NAMELSAD))
+
+mergedFire <- fire %>% 
+  left_join(caCounties, by=c("incident_county"="NAMELSAD")) %>% 
+  filter(!is.na(INTPTLAT))
+
+colnames(mergedFire) <- c("incidentName", "incidentDateCreated", "incidentCounty", 
+                          "incidentAcresBurned", "lat", "lon")
+```
+
+Setting up the mushroom observation data
+```{r}
+obs <- read_tsv("observations.csv")
+obs <- obs %>% 
+  subset(is_collection_location == 1) %>% # Some reported specimens were not picked at that location 
+  select(name_id, when, location_id, confidence = vote_cache)
+
+locCrude <- read_tsv("locations.csv")
+
+loc <- locCrude %>% 
+  mutate(lat = (north + south) / 2, long = (west + east) / 2) %>% 
+  select(location_id = id, lat, long, location = name)
+
+obs <- left_join(obs, loc, by = "location_id")
+
+speciesCrude <- read_tsv("names.csv")
+furtherTaxonomy <- read_tsv("name_classifications.csv")[,c(1,7)]
+
+species <- speciesCrude[,c(1,2,7)]
+species <- rename(species, name_id = id)
+
+obs <- left_join(obs, species, by = "name_id")
+obs <- left_join(obs, furtherTaxonomy, by = "name_id")
+
+colnames(obs) <- c("nameId", "when", "locationId", 
+                          "confidence", "lat", "lon", "location", "name", "rank", "family")
+
+obs
+mergedFire
+```
+
+
+
+
+Fire function
+
+```{r}
+fireSearch <- function(dataset, search_value=NULL, lat=NULL, lon=NULL, 
+                       error_threshold=1){
+  if (is.null(search_value) && (is.null(lat) || is.null(lon))) {
+    stop("Provide either 'search_value' or 'lat' and 'lon'")
+  }
+  
+  if (!is.null(search_value)) {
+    search_value <- tolower(search_value)
+    result <- dataset[tolower(dataset$incidentCounty) == search_value, ]
+  }
+  
+  else {
+    # Latitude and longitude search threshold to find close proximity fires.
+    result <- dataset[
+      abs(dataset$lat - lat) <= error_threshold & 
+      abs(dataset$lon - lon) <= error_threshold,
+    ]
+  }
+
+  return(result)
+}
+
+head(fireSearch(mergedFire, "San Diego"))
+fireSearch(mergedFire, lat=40, lon=-122)
+fireSearch(mergedFire, "Santa Cruz")
+```
+
+Performing a t-test (paired) -> for the immediate effect
+
+```{r}
+
+# BASE
+obs %>% 
+  filter(location == "Yosemite National Park, Mariposa Co., Mono Co., Madera Co., and Tuolumne Co., California, USA") %>% 
+  mutate(before_fire = when < "2013-08-17") %>% 
+  group_by(before_fire) %>% 
+  filter(when > "2011-08-17" & when < "2015-08-17") %>% 
+  tally()
+```
+```{r}
+# t test before and after fire at various sites across the Ortega Highway
+
+obs %>% 
+  filter(lat == "33.64035")
+
+fireSearch(mergedFire, "Orange")
+
+# tally function for Orange County
+
+obs %>% 
+  filter(location == "Ortega Highway, Cleveland National Forest, California, USA") %>% 
+  mutate(before_fire = when < "2002-12-28") %>% 
+  group_by(before_fire) %>% 
+  filter(when > "2000-12-28" & when < "2004-12-28") %>% 
+  tally()
+
+```
+```{r}
+fireSearch(mergedFire, "Santa Cruz")
+```
+```{r}
+obs %>% 
+  filter(str_detect(location, "San Bernardino Co."))
+
+
+
+SanBernardino <- fireSearch(mergedFire, "San Bernardino") 
+
+SanBernardino <- fireSearch(mergedFire, "Riverside") 
+
+SanBernardino %>% 
+  arrange(desc(incidentAcresBurned))
+ 
+
+#Etiwanda fire: north of Rancho Cucamonga -> rancho cucamonga/cucamonga canyon (https://www.vvng.com/etiwanda-fire-latest-details/)  (2014)
+#Lake fire: South of Big Bear Lake -> Jenks Lake/Seven Oaks/Bluff Lake Reserve/Barton flats (2015)
+#Holcomb fire: north of Big Bear Lake -> near/Big Bear Lake
+#North fire: Area most impacted were adjacent to Interstate15 -> Hesperia
+#Pilot fire: near Silverwood Lake -> Crestline
+#El Dorado fire: San Gorgonio Wilderness/Yucaipa (Sept to Nov 2020)
+
+
+
+#Concerns: Data points might not be independent? Hard because fires do not have clear, set boundaries
+```
+
+```{r}
+ShastaFire <- fireSearch(mergedFire, "Shasta")
+SiskiyouFire <- fireSearch(mergedFire, "Siskiyou")
+
+ShastaFire %>% 
+  arrange(desc(incidentAcresBurned))
+
+ShastaObs <- obs %>% 
+  filter(str_detect(location, "Shasta"))
+
+unique(ShastaObs$location)
+
+# Hirz Fire
+
+ShastaObs %>% 
+  filter(str_detect(location, "National Forest" ))
+```
+
+
+
+Functions for Shasta County 
+
+
+```{r}
+# 1. What fires did Shasta County have?
+
+shastaFire <- fireSearch(mergedFire, "Shasta")
+shastaFire %>% 
+  arrange(desc(incidentAcresBurned))
+
+# 2. Generalize the locations in MO to make it easier 
+# *Shasta Trinity National Forest (2018-2022)
+# *South of Shasta Trinity National Forest (2014-2018, 2021-2025)
+# *Lassen National Forest 
+
+# Use Google to check the locations of the fires. For example, ...
+# Hirz fire -> Shasta Trinity National Forest (2018 August) -> assumed not fully recovered until 2022 August
+# Bald/Eiler/Bully fires -> South of Shasta Trinity National Forest (Redding, Burney) (2014 July) -> assumed not fully recovered until 2018 July
+# Salt fire -> Shasta Trinity National Forest, but not yet fully recovered
+# Fawn fire -> South of Shasta Trinity National Forest (2021 September)
+
+
+# 3. Try to match it with the Mushroom Observer data using the keyword of the location (function created to streamline this process) 
+
+shastaFireObs <- function(keyword){
+  
+  output <- obs %>% 
+    filter(str_detect(location, "Shasta")) %>% 
+    filter(str_detect(location, keyword))
+  
+  print(output)
+}
+
+shastaFireObs("Lake")
+```
+
+```{r}
+shastaFire <- fireSearch(mergedFire, "Shasta")
+
+shastaFire %>%
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+shastaObs <- obs %>% 
+  filter(str_detect(location, "Shasta"))
+
+shastaObs %>% 
+  group_by(year(when)) %>% 
+  count() 
+
+```
+
+
+
+```{r}
+# 1. Pick counties in California with rich data
+# -> Sonoma, Marin, Santa Clara, Humboldt, Mendocino
+
+# 2. Count the number of fires in each year
+
+fireSearch(mergedFire, "Sonoma") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+
+fireSearch(mergedFire, "Marin") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+fireSearch(mergedFire, "Santa Clara") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+fireSearch(mergedFire, "Humboldt") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+fireSearch(mergedFire, "Mendocino") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count()
+
+# 3. Count the number of observations in each year
+
+obs %>% 
+  filter(str_detect(location, "Sonoma")) %>% 
+  group_by(year(when)) %>% 
+  filter(year(when) > "2012") %>% 
+  count() 
+  
+
+obs %>% 
+  filter(str_detect(location, "Marin")) %>% 
+  group_by(year(when)) %>% 
+  filter(year(when) > "2012") %>% 
+  count() 
+
+obs %>% 
+  filter(str_detect(location, "Santa Clara")) %>% 
+  group_by(year(when)) %>% 
+  filter(year(when) > "2012") %>% 
+  count() 
+
+obs %>% 
+  filter(str_detect(location, "Humboldt")) %>% 
+  group_by(year(when)) %>% 
+  filter(year(when) > "2012") %>% 
+  count() 
+
+obs %>% 
+  filter(str_detect(location, "Mendocino")) %>% 
+  group_by(year(when)) %>% 
+  filter(year(when) > "2012") %>% 
+  count() 
+```
+
+```{r}
+# 4. Create a data frame
+ 
+data1 <- fireSearch(mergedFire, "Sonoma") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count() %>% 
+  mutate(county = "Sonoma") 
+
+
+
+data2 <- fireSearch(mergedFire, "Marin") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count() %>% 
+  mutate(county = "Marin") 
+  
+
+
+data3 <- fireSearch(mergedFire, "Santa Clara") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count() %>% 
+  mutate(county = "Santa Clara") 
+  
+
+data4 <- fireSearch(mergedFire, "Humboldt") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count() %>% 
+  mutate(county = "Humboldt")  
+  
+
+data5 <- fireSearch(mergedFire, "Mendocino") %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  count() %>% 
+  mutate(county = "Mendocino")  
+ 
+
+merge1 <- rbind(data1,data2,data3,data4,data5)
+
+data6 <- obs %>% 
+  rename(incidentDateCreated = when) %>% 
+  filter(str_detect(location, "Sonoma")) %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  filter(year(incidentDateCreated) > "2012") %>%
+  count() %>% 
+  mutate(county = "Sonoma") 
+
+  
+data7 <- obs %>% 
+  rename(incidentDateCreated = when) %>% 
+  filter(str_detect(location, "Marin")) %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  filter(year(incidentDateCreated) > "2012") %>%
+  count() %>% 
+  mutate(county = "Marin") 
+ 
+
+data8 <- obs %>% 
+  rename(incidentDateCreated = when) %>% 
+  filter(str_detect(location, "Santa Clara")) %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  filter(year(incidentDateCreated) > "2012") %>%
+  count() %>% 
+  mutate(county = "Santa Clara") 
+  
+
+data9 <- obs %>% 
+  rename(incidentDateCreated = when) %>% 
+  filter(str_detect(location, "Humboldt")) %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  filter(year(incidentDateCreated) > "2012") %>%
+  count() %>% 
+  mutate(county = "Humboldt") 
+  
+
+data10 <- obs %>% 
+  rename(incidentDateCreated = when) %>% 
+  filter(str_detect(location, "Mendocino")) %>% 
+  group_by(year(incidentDateCreated)) %>%
+  filter(year(incidentDateCreated) > "2012") %>%
+  count() %>% 
+  mutate(county = "Mendocino") 
+  
+
+merge2 <- rbind(data6, data7, data8, data9, data10)
+
+merge1
+merge2
+
+mergedData <- merge(merge1,merge2, by = c("county","year(incidentDateCreated)"))
+
+
+merge1 %>% 
+  full_join(merge2)
+```
+```{r}
+ggplot(mergedData, aes(x = n.x, y = n.y)) +
+  geom_point() + stat_smooth()
+```
+
+
+```{r}
+mergedFire %>% 
+  filter(incidentCounty=="Sonoma")
+```
+
+```{r}
+mergedData <- merge(merge1,merge2, by = c("county","year(incidentDateCreated)"))
+mergedData
+```
+
+```{r}
+write.csv(mergedData,"fireWrangledData.csv")
+
+getwd()
+```
+```{r}
+fireWrangledData <- read.csv("fireWrangledData.csv")
+
+ggplot(fireWrangledData, aes(x = n.x, y = n.y)) +
+  geom_point() + stat_smooth()
+```
+
+
+```{r}
+fireWrangledData %>% 
+  rename(year = year.incidentDateCreated.)
+```
+
+```{r}
+fireSearch(mergedFire, "Humboldt") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1) %>% 
+  na.omit() %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  summarise(totalFireValue = sum(fireValue))
+
+fireSearch(mergedFire, "Humboldt") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1)
+```
+
+```{r}
+fireSearch(mergedFire, "Marin") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1) %>% 
+  na.omit() %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  summarise(totalFireValue = sum(fireValue))
+```
+
+
+```{r}
+fireSearch(mergedFire, "Mendocino") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1) %>% 
+  na.omit() %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  summarise(totalFireValue = sum(fireValue))
+```
+```{r}
+fireSearch(mergedFire, "Santa Clara") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1) %>% 
+  na.omit() %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  summarise(totalFireValue = sum(fireValue))
+```
+
+
+```{r}
+fireSearch(mergedFire, "Sonoma") %>% 
+  mutate(fireValue = incidentAcresBurned/247.1) %>% 
+  na.omit() %>% 
+  group_by(year(incidentDateCreated)) %>% 
+  summarise(totalFireValue = sum(fireValue))
+```
+
+```{r}
+fireAnalysisData <- read.csv("fireWrangledData.csv")
+fireAnalysisData
+```
+
+```{r}
+ggplot(fireAnalysisData, aes(x = km2, y = numberOfMushroomObservations, color = county)) +
+  geom_point() + stat_smooth() + geom_jitter()
+
+```
+
+```{r}
+model <- lm(numberOfMushroomObservations^(1/4) ~ km2, data = fireAnalysisData)
+summary(model)
+plot(model)
+```
+```{r}
+library(lme4)
+library(lmerTest)
+
+mixed_model_IntOnly <- lmer(numberOfMushroomObservations ~ km2  +(1|county), data = fireAnalysisData, REML = FALSE)
+summary(mixed_model_IntOnly)
+```
+```{r}
+{5695/(5695+51505)}*100
+```
+
+
+

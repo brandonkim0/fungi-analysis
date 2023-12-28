@@ -1,0 +1,44 @@
+"","county","year(incidentDateCreated)","n.x","n.y"
+"1","Humboldt",2013,2,1063
+"2","Humboldt",2014,2,955
+"3","Humboldt",2015,4,66
+"4","Humboldt",2016,3,55
+"5","Humboldt",2017,6,97
+"6","Humboldt",2018,4,95
+"7","Humboldt",2019,1,145
+"8","Humboldt",2020,4,80
+"9","Humboldt",2021,3,106
+"10","Humboldt",2022,2,43
+"11","Humboldt",2023,2,13
+"12","Marin",2017,2,419
+"13","Marin",2018,2,587
+"14","Marin",2019,1,417
+"15","Marin",2020,1,314
+"16","Marin",2021,2,385
+"17","Marin",2022,1,229
+"18","Mendocino",2013,3,177
+"19","Mendocino",2015,3,295
+"20","Mendocino",2016,2,165
+"21","Mendocino",2017,4,194
+"22","Mendocino",2018,5,168
+"23","Mendocino",2019,4,133
+"24","Mendocino",2020,7,240
+"25","Mendocino",2021,5,348
+"26","Mendocino",2022,5,221
+"27","Mendocino",2023,1,13
+"28","Santa Clara",2013,2,71
+"29","Santa Clara",2016,4,81
+"30","Santa Clara",2017,8,66
+"31","Santa Clara",2018,9,49
+"32","Santa Clara",2019,11,62
+"33","Santa Clara",2020,6,34
+"34","Santa Clara",2021,2,22
+"35","Santa Clara",2023,2,50
+"36","Sonoma",2013,4,205
+"37","Sonoma",2016,1,483
+"38","Sonoma",2017,7,589
+"39","Sonoma",2018,1,912
+"40","Sonoma",2019,1,610
+"41","Sonoma",2020,2,397
+"42","Sonoma",2021,1,204
+"43","Sonoma",2022,2,135
